@@ -1,62 +1,43 @@
-export async function onRequestPost(context) {
-  const { request, env } = context;
-
+export async function onRequestPost({ request, env }) {
   const GAS_WEBAPP_URL = env.GAS_WEBAPP_URL;
-  const GAS_SECRET = env.GAS_SECRET;
+  const GAS_SECRET = env.GAS_SECRET || "";
 
   if (!GAS_WEBAPP_URL) {
-    return new Response(JSON.stringify({ ok:false, error:"GAS_WEBAPP_URL no configurado" }), { status:500 });
+    return Response.json({ ok:false, error:"GAS_WEBAPP_URL no configurado" }, { status: 500 });
   }
 
   let body;
-  try {
-    body = await request.json();
-  } catch {
-    return new Response(JSON.stringify({ ok:false, error:"JSON inválido" }), { status:400 });
-  }
+  try { body = await request.json(); }
+  catch { return Response.json({ ok:false, error:"JSON inválido" }, { status: 400 }); }
 
-  const payload = { ...body, secret: GAS_SECRET || "" };
+  const payload = { ...body, secret: GAS_SECRET };
 
-  async function post(url){
-    const r = await fetch(url, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
+  async function postFollow(url) {
+    const r1 = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      redirect:"manual"
+      redirect: "manual",
     });
-    if ([301,302,303,307,308].includes(r.status)) {
-      const loc = r.headers.get("Location");
-      if (loc) return fetch(loc, {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify(payload)
+
+    if ([301,302,303,307,308].includes(r1.status)) {
+      const loc = r1.headers.get("Location");
+      if (!loc) return r1;
+      return fetch(loc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
     }
-    return r;
+    return r1;
   }
 
-  try {
-    const up = await post(GAS_WEBAPP_URL);
-    const txt = await up.text();
-    let data;
-    try { data = JSON.parse(txt); }
-    catch { data = { ok:false, raw:txt }; }
+  const up = await postFollow(GAS_WEBAPP_URL);
+  const text = await up.text();
 
-    return new Response(JSON.stringify(data), {
-      headers:{ "Content-Type":"application/json; charset=utf-8", "Access-Control-Allow-Origin":"*" }
-    });
-  } catch (e) {
-    return new Response(JSON.stringify({ ok:false, error:String(e) }), { status:500 });
-  }
-}
+  let data;
+  try { data = JSON.parse(text); }
+  catch { data = { ok:false, error:"Respuesta no-JSON desde Apps Script", raw: text }; }
 
-export async function onRequestOptions(){
-  return new Response(null,{
-    status:204,
-    headers:{
-      "Access-Control-Allow-Origin":"*",
-      "Access-Control-Allow-Methods":"POST, OPTIONS",
-      "Access-Control-Allow-Headers":"Content-Type"
-    }
-  });
+  return Response.json(data, { status: 200 });
 }
