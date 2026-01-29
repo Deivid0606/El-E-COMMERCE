@@ -10,38 +10,38 @@ export async function onRequestPost({ request, env }) {
   try { body = await request.json(); }
   catch { return Response.json({ ok: false, error: "JSON inválido" }, { status: 400 }); }
 
-  // 🔐 mandamos el secret en el body
   const payload = { ...body, secret: GAS_SECRET };
 
-  // ✅ POST con redirect manual (para evitar que se convierta en GET)
-  async function postRepost(url) {
-    const r1 = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      redirect: "manual",
-    });
+  async function repost(url, max = 5) {
+    let currentUrl = url;
 
-    if ([301, 302, 303, 307, 308].includes(r1.status)) {
-      const loc = r1.headers.get("Location");
-      if (!loc) return r1;
-
-      // Re-POST al Location
-      return fetch(loc, {
+    for (let i = 0; i < max; i++) {
+      const r = await fetch(currentUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         redirect: "manual",
       });
+
+      // Si no hay redirect, devolvemos respuesta
+      if (![301, 302, 303, 307, 308].includes(r.status)) return r;
+
+      const loc = r.headers.get("Location");
+      if (!loc) return r;
+
+      currentUrl = loc;
     }
 
-    return r1;
+    // si se pasa de redirects
+    return new Response(JSON.stringify({ ok: false, error: "Demasiados redirects" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  const upstream = await postRepost(GAS_WEBAPP_URL);
+  const upstream = await repost(GAS_WEBAPP_URL, 5);
   const text = await upstream.text();
 
-  // ✅ siempre devolver JSON al frontend
   let data;
   try { data = JSON.parse(text); }
   catch { data = { ok: false, error: "Respuesta no-JSON desde Apps Script", raw: text.slice(0, 400) }; }
