@@ -10,11 +10,11 @@ export async function onRequestPost({ request, env }) {
   try { body = await request.json(); }
   catch { return Response.json({ ok: false, error: "JSON inválido" }, { status: 400 }); }
 
-  // ✅ Mandar secret en el body (Apps Script no expone headers bien)
+  // 🔐 mandamos el secret en el body
   const payload = { ...body, secret: GAS_SECRET };
 
-  // ✅ Manejo de redirect de Google SIN perder POST
-  async function postWithManualRedirect(url) {
+  // ✅ POST con redirect manual (para evitar que se convierta en GET)
+  async function postRepost(url) {
     const r1 = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -26,7 +26,7 @@ export async function onRequestPost({ request, env }) {
       const loc = r1.headers.get("Location");
       if (!loc) return r1;
 
-      // Re-POST al Location (no GET)
+      // Re-POST al Location
       return fetch(loc, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -38,15 +38,13 @@ export async function onRequestPost({ request, env }) {
     return r1;
   }
 
-  const upstream = await postWithManualRedirect(GAS_WEBAPP_URL);
+  const upstream = await postRepost(GAS_WEBAPP_URL);
   const text = await upstream.text();
 
-  // ✅ Siempre devolver JSON al frontend
+  // ✅ siempre devolver JSON al frontend
   let data;
   try { data = JSON.parse(text); }
-  catch {
-    data = { ok: false, error: "Respuesta no-JSON desde Apps Script", raw: text.slice(0, 400) };
-  }
+  catch { data = { ok: false, error: "Respuesta no-JSON desde Apps Script", raw: text.slice(0, 400) }; }
 
   return Response.json(data, { status: 200 });
 }
